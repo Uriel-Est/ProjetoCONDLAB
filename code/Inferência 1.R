@@ -70,3 +70,55 @@ ggplot(resultado_sexo, aes(x = Tempo, y = Total, group = 1)) + #gráfico de linh
     y = "População total"
   )
 
+
+# Estudo 2019.3 -----------------------------------------------------------
+
+
+dadosPNADc19.3 <- get_pnadc(year = 2019, quarter = 3, labels = F)
+#DO AGAIN BITCH
+#VD4001 == 1 #força de trabalho
+#VD4002 == 1 #trabalhando
+#VD4009 == 9 or 10 #autônomo ou familiar
+#VD4010 == 1 #agricultura
+
+unique(dadosPNADc19.3$variables$VD4001)#checando as respostas nas variáveis desejadas
+unique(dadosPNADc19.3$variables$VD4002)
+unique(dadosPNADc19.3$variables$VD4009)
+unique(dadosPNADc19.3$variables$VD4010)
+
+dadosPNADc19.3 <- update( #atualiza o design amostral
+  dadosPNADc19.3, #o design original
+  CONDLAB = ifelse( #cria a nova variável com base nas condições
+    VD4001 == "1" & VD4002 == "1" & 
+      VD4009 %in% c("09", "10") & VD4010 == "01", 
+    1, 0 #atribui 1 se as condições forem atendidas, senão 0
+  )
+)
+
+table(dadosPNADc19.3$variables$CONDLAB) #verificar se a variável foi criada corretamente
+
+dadosPNADc19.3 <- update( #dividir o Brasil entre três alternativas: Brasil, Nordeste, Brasil s/ Nordeste
+  dadosPNADc19.3,
+  Nordeste = ifelse(UF %in% c("21", "22", "23", "24", "25", "26", "27", "28", "29"), 1, 0),
+  RestoBrasil = ifelse(UF %in% c("21", "22", "23", "24", "25", "26", "27", "28", "29"), 0, 1),
+  Ambos = 1  #todas as observações do dataset caem sobre ambos~
+)
+
+design_nordeste <- subset(dadosPNADc19.3, Nordeste == 1) #subset define os designs
+design_restoBrasil <- subset(dadosPNADc19.3, RestoBrasil == 1)
+design_ambos <- dadosPNADc19.3  #não há a necessidade de filtros, visto que inclui tudo~
+
+resultadoNord <- svytotal(~CONDLAB, design = design_nordeste) #realizar os cálculos de estimativa para cada uma das regiões de interesse
+resultadoResto <- svytotal(~CONDLAB, design = design_restoBrasil)
+resultadoAmbos <- svytotal(~CONDLAB, design = design_ambos)
+
+totalNord <- resultadoNord[["CONDLAB"]]  #extrair resultado
+totalResto <- resultadoResto[["CONDLAB"]]  #para o Brasil s/ nordeste
+totalAmbos <- resultadoAmbos[["CONDLAB"]]  #para o Brasil inteiro
+
+porcentagemNord <- (totalNord / totalAmbos) * 100
+porcentagemResto <- (totalResto / totalAmbos) * 100
+porcentagemAmbos <- (totalAmbos / totalAmbos) * 100
+
+porcentagemNord <- round(porcentagemNord, digits = 1)
+porcentagemResto <- round(porcentagemResto, digits = 1)

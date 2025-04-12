@@ -1,6 +1,9 @@
 library(PNADcIBGE)
 library(survey)
 library(ggplot2)
+library(dplyr)
+library(srvyr)
+library(tidyr)
 #library(gtsummary)
 #library(tidyverse)
 #library(flextable)
@@ -116,9 +119,234 @@ totalNord <- resultadoNord[["CONDLAB"]]  #extrair resultado
 totalResto <- resultadoResto[["CONDLAB"]]  #para o Brasil s/ nordeste
 totalAmbos <- resultadoAmbos[["CONDLAB"]]  #para o Brasil inteiro
 
-porcentagemNord <- (totalNord / totalAmbos) * 100
-porcentagemResto <- (totalResto / totalAmbos) * 100
-porcentagemAmbos <- (totalAmbos / totalAmbos) * 100
+##PRÓXIMOS PASSOS:
+##1. REFAZER RENOMEANDO TODAS ESSES TROÇOS PRA PRIMEIRA VARIÁVEL DESEJADA
+##2. FAZER AS PRÓXIMAS VARIÁVEIS SEU IMBECIL DE MERDA
+##3. TRANSFORMAR EM % DIVDINDO PELA FORÇA DE TRABALHO [QUE SERÁ A SOMA DE TODAS ELAS]
+##4. SE OS VALORES FICAREM OKAY, ENTÃO REFAÇA DE NOVO PARA O ANO DE 2024.3
+##5. SE DELICIAR EM SUA VITÓRIA ABSOLUTA E CURTIR SÃO PAULO TRANQUILAMENTE
 
-porcentagemNord <- round(porcentagemNord, digits = 1)
-porcentagemResto <- round(porcentagemResto, digits = 1)
+
+# Encadeando as 16 variáveis ----------------------------------------------
+
+dados2019.3 <- as_survey_rep(dadosPNADc19.3) # Cria uma réplica do objeto survey
+
+dados2019.3 <- update(dados2019.3,
+                      CONDLAB = ifelse(
+                        VD4001 == 1 & VD4002 == 1 & 
+                          ((VD4009 == "09" & VD4010 == "01") | (VD4009 == "10" & VD4010 == "01")), 1, # 1 Conta própria/familiar na agricultura
+                        ifelse(
+                          VD4001 == 1 & VD4002 == 1 &
+                            VD4009 == "02" & VD4010 == "01", 2, # 2 Assalariado sem carteira na agricultura
+                          ifelse(
+                            VD4001 == 1 & VD4002 == 1 &
+                              VD4009 == "01" & VD4011 %in% c(1, 2, 3), 3, # 3 Assalariado com carteira colarinho branco superior
+                            ifelse(
+                              VD4001 == 1 & VD4002 == 1 &
+                                VD4009 == "01" & VD4011 %in% c(4, 5), 4, # 4 Assalariado com carteira colarinho branco inferior / serviços / comércio
+                              ifelse(
+                                VD4001 == 1 & VD4002 == 1 &
+                                  VD4009 == "01" & VD4011 %in% c(6, 7, 8), 5, # 5 Assalariado com carteira qualificado / semi-qualificado
+                                ifelse(
+                                  VD4001 == 1 & VD4002 == 1 &
+                                    VD4009 == "01" & VD4011 == 9, 6, # 6 Assalariado com carteira não qualificado
+                                  ifelse(
+                                    VD4001 == 1 & VD4002 == 1 &
+                                      VD4009 == "02" & V4018 == 1 & VD4010 != "01", 7, # 7 Sem carteira, pequenas empresas, fora agricultura
+                                    ifelse(
+                                      VD4001 == 1 & VD4002 == 1 &
+                                        VD4009 == "02" & V4018 %in% c(2, 3, 4) & VD4010 != "01", 8, # 8 Sem carteira, médias/grandes empresas, fora agricultura
+                                      ifelse(
+                                        VD4001 == 1 & VD4002 == 1 &
+                                          VD4009 %in% c("03", "04"), 9, # 9 Trabalhador doméstico
+                                        ifelse(
+                                          VD4001 == 1 & VD4002 == 1 &
+                                            VD4009 == "06", 10, # 10 Setor público sem carteira
+                                          ifelse(
+                                            VD4001 == 1 & VD4002 == 1 &
+                                              (VD4009 %in% c("05", "07") | (VD4009 == "01" & VD4011 == 10)), 11, # 11 Setor público com carteira / militares
+                                            ifelse(
+                                              VD4001 == 1 & VD4002 == 1 &
+                                                VD4009 == "08" & V4019 == 1, 12, # 12 Empregador formal com CNPJ
+                                              ifelse(
+                                                VD4001 == 1 & VD4002 == 1 &
+                                                  VD4009 == "09" & VD4012 == 1 & VD4010 != "01", 13, # 13 Autônomo formal fora da agricultura
+                                                ifelse(
+                                                  VD4001 == 1 & VD4002 == 1 &
+                                                    ((VD4009 == "08" & V4019 == 2 & VD4016 >= 998) |
+                                                       (VD4009 == "09" & VD4010 > "01" & VD4012 == 2 & VD4016 >= 998)), 14, # 14 Informal “produtivo” fora da agricultura
+                                                  ifelse(
+                                                    VD4001 == 1 & VD4002 == 1 &
+                                                      ((VD4009 == "08" & V4019 == 2 & VD4016 < 998) |
+                                                         (VD4009 == "09" & VD4010 > "01" & VD4012 == 2 & VD4016 < 998)), 15, # 15 Informal marginal fora da agricultura
+                                                    ifelse(
+                                                      VD4001 == 1 & VD4002 == 1 &
+                                                        VD4009 == "10" & VD4010 > "01", 16, # 16 Familiar auxiliar fora da agricultura
+                                                      NA_integer_ # caso não atenda a nenhum critério
+                                                    )))))))))))))))))
+)
+
+
+all_levels <- as.character(1:16)
+
+svytable(~CONDLAB, dados2019.3)
+svytable(~is.na(CONDLAB), dados2019.3)
+
+Brazil_flat <- svytable(~factor(CONDLAB, levels = all_levels), dados2019.3)# Brasil inteiro
+
+ufs_nordeste <- c("21", "22", "23", "24", "25", "26", "27", "28", "29") # Nordeste
+dados_nordeste <- subset(dados2019.3, UF %in% ufs_nordeste)
+Nordeste_flat <- svytable(~factor(CONDLAB, levels = all_levels), dados_nordeste)
+
+dados_sem_nordeste <- subset(dados2019.3, !(UF %in% ufs_nordeste)) # Brasil sem nordeste
+NoNordeste_flat <- svytable(~factor(CONDLAB, levels = all_levels), dados_sem_nordeste)
+
+Brazil_prop <- prop.table(Brazil_flat)
+Nordeste_prop <- prop.table(Nordeste_flat)
+NoNordeste_prop <- prop.table(NoNordeste_flat)
+
+sum(Brazil_prop)
+sum(Nordeste_prop)
+sum(NoNordeste_prop)
+
+print(Brazil_prop)
+print(Nordeste_prop)
+print(NoNordeste_prop)
+
+df <- dados2019.3$variables
+table(df$CONDLAB)
+table(is.na(df$CONDLAB))
+
+
+# de onda em onda, variável a variável -----------------------------------------
+
+
+# Começando tudo como NA~
+df$CONDLAB <- NA_integer_
+# 0 = Não-empregado (desempregado ou fora da força de trabalho)
+df$CONDLAB[df$VD4001 == 2 | df$VD4002 == 2] <- 0  # Novo código para não-empregados
+#o Sol brilha, as pessoas trabalham:
+sol <- df$VD4001 == 1 & df$VD4002 == 1
+#onda 1: Self Employed/family work in agriculture
+onda1 <- (df$VD4009 %in% c(9, 10)) & df$VD4010 == "01"
+#aplicando a condição do Sol~
+df$CONDLAB[sol & onda1] <- 1
+table(df$CONDLAB, useNA = "ifany")
+table(sol)
+table(onda1)
+
+#Onda 2: Wage work without carteira in agriculture
+df$onda2_flag <- (df$VD4009 == 2) & df$VD4010 == "01"
+#aplicar ao CONDLAB
+df$CONDLAB[sol & df$onda2_flag] <- 2
+#Confirmação::
+table(df$onda2_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 3: Private sector wage worker with carteira, upper white-collar
+VD4009 == 1 & VD4011 %in% c(1, 2, 3)
+df$onda3_flag <- (df$VD4009 == "01") & (df$VD4011 %in% c("01", "02", "03"))
+df$CONDLAB[sol & df$onda3_flag] <- 3
+#Confirmação::
+table(df$onda3_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 4: Private sector with carteira, lower white-collar/services/trade
+df$onda4_flag <- (df$VD4009 == "01") & (df$VD4011 %in% c("04", "05"))
+df$CONDLAB[sol & df$onda4_flag] <- 4
+#Confirmação::
+table(df$onda4_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 5: Private sector with carteira, blue-collar skilled/semi-skilled
+df$onda5_flag <- (df$VD4009 == "01") & (df$VD4011 %in% c("06", "07", "08"))
+df$CONDLAB[sol & df$onda5_flag] <- 5
+#Confirmação::
+table(df$onda2_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+
+#Onda 6: Private sector with carteira, blue-collar, unskilled
+df$onda6_flag <- (df$VD4009 == "01") & (df$VD4011 == "09")
+df$CONDLAB[sol & df$onda6_flag] <- 6
+#Confirmação::
+table(df$onda6_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 7: Private sector without carteira, small enterprise [up to 5 workers]
+df$onda7_flag <- (df$VD4009 == "02") & (df$V4018 == 1) & (df$VD4010 != "01")
+df$CONDLAB[sol & df$onda7_flag] <- 7
+#Confirmação::
+table(df$onda7_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 8: Private sector without carteira, medium/large enterprise[, non-agro[>5 workers]
+df$onda8_flag <- (df$VD4009 == "02") & (df$V4018 %in% c(2, 3, 4)) & (df$VD4010 != "01")
+df$CONDLAB[sol & df$onda8_flag] <- 8
+#Confirmação::
+table(df$onda8_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 9: Domestic workers (with or without carteira)
+df$onda9_flag <- df$VD4009 %in% c("03", "04")
+df$CONDLAB[sol & df$onda9_flag] <- 9
+#Confirmação::
+table(df$onda9_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 10: Public sector workers without carteira
+df$onda10_flag <- df$VD4009 == "06"
+df$CONDLAB[sol & df$onda10_flag] <- 10
+#Confirmação::
+table(df$onda10_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 11: Public sector with carteira / military / civil servant
+df$onda11_flag <- df$VD4009 == "05" |
+  df$VD4009 == "07" |
+  (df$VD4009 == "01" & df$VD4011 == "10")
+df$CONDLAB[sol & df$onda11_flag] <- 11
+#Confirmação::
+table(df$onda11_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 12: Formal employer (with CNPJ registration)
+df$onda12_flag <- df$VD4009 == "08" & df$V4019 == "1"
+df$CONDLAB[sol & df$onda12_flag] <- 12
+#Confirmação::
+table(df$onda12_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 13: Formal non-agricultural self-employed work (contributing to social security)
+df$onda13_flag <- df$VD4009 == "09" & df$VD4012 == "1" & df$VD4010 != "01"
+df$CONDLAB[sol & df$onda13_flag] <- 13
+#Confirmação::
+table(df$onda13_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 14: Informal "productive" non-agricultural self-employed work or employer
+df$onda14_flag <- (df$VD4009 == "08" & df$V4019 == "2" & df$VD4016 >= 998) |
+  (df$VD4009 == "09" & df$VD4010 > "01" & df$VD4012 == "2" & df$VD4016 >= 998)
+df$CONDLAB[sol & df$onda14_flag] <- 14
+# Confirmação::
+table(df$onda14_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 15: Informal "marginal" non-agricultural self-employed work or employer
+df$onda15_flag <- (df$VD4009 == "08" & df$V4019 == "2" & df$VD4016 < 998) |
+  (df$VD4009 == "09" & df$VD4010 > "01" & df$VD4012 == "2" & df$VD4016 < 998)
+df$CONDLAB[sol & df$onda15_flag] <- 15
+#Confirmação
+table(df$onda15_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+#Onda 16: Non-agricultural family work
+df$onda16_flag <- (df$VD4009 == "10" & df$VD4010 > "01")
+df$CONDLAB[sol & df$onda16_flag] <- 16
+#Confirmação
+table(df$onda16_flag, useNA = "ifany")
+table(df$CONDLAB, useNA = "ifany")
+
+# Checar se todos os empregados (sol) foram classificados
+unclassified_employed <- sum(sol & is.na(df$CONDLAB), na.rm = T)
+if(unclassified_employed > 0) warning(paste(unclassified_employed, "casos empregados não classificados!"))

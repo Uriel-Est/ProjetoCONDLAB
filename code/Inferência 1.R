@@ -4,6 +4,7 @@ library(ggplot2)
 library(dplyr)
 library(srvyr)
 library(tidyr)
+library(knitr)
 #library(gtsummary)
 #library(tidyverse)
 #library(flextable)
@@ -227,6 +228,7 @@ df$CONDLAB <- NA_integer_
 df$CONDLAB[df$VD4001 == 2 | df$VD4002 == 2] <- 0  # Novo código para não-empregados
 #o Sol brilha, as pessoas trabalham:
 sol <- df$VD4001 == 1 & df$VD4002 == 1
+
 #onda 1: Self Employed/family work in agriculture
 onda1 <- (df$VD4009 %in% c(9, 10)) & df$VD4010 == "01"
 #aplicando a condição do Sol~
@@ -326,7 +328,7 @@ table(df$CONDLAB, useNA = "ifany")
 
 #Onda 14: Informal "productive" non-agricultural self-employed work or employer
 df$onda14_flag <- (df$VD4009 == "08" & df$V4019 == "2" & df$VD4016 >= 998) |
-  (df$VD4009 == "09" & df$VD4010 > "01" & df$VD4012 == "2" & df$VD4016 >= 998)
+  (df$VD4009 == "09" & as.numeric(df$VD4010) > 1 & df$VD4012 == "2" & df$VD4016 >= 998)
 df$CONDLAB[sol & df$onda14_flag] <- 14
 # Confirmação::
 table(df$onda14_flag, useNA = "ifany")
@@ -334,14 +336,14 @@ table(df$CONDLAB, useNA = "ifany")
 
 #Onda 15: Informal "marginal" non-agricultural self-employed work or employer
 df$onda15_flag <- (df$VD4009 == "08" & df$V4019 == "2" & df$VD4016 < 998) |
-  (df$VD4009 == "09" & df$VD4010 > "01" & df$VD4012 == "2" & df$VD4016 < 998)
+  (df$VD4009 == "09" & as.numeric(df$VD4010) > 1 & df$VD4012 == "2" & df$VD4016 < 998)
 df$CONDLAB[sol & df$onda15_flag] <- 15
 #Confirmação
 table(df$onda15_flag, useNA = "ifany")
 table(df$CONDLAB, useNA = "ifany")
 
 #Onda 16: Non-agricultural family work
-df$onda16_flag <- (df$VD4009 == "10" & df$VD4010 > "01")
+df$onda16_flag <- (df$VD4009 == "10" & as.numeric(df$VD4010) > 1)
 df$CONDLAB[sol & df$onda16_flag] <- 16
 #Confirmação
 table(df$onda16_flag, useNA = "ifany")
@@ -350,3 +352,80 @@ table(df$CONDLAB, useNA = "ifany")
 # Checar se todos os empregados (sol) foram classificados
 unclassified_employed <- sum(sol & is.na(df$CONDLAB), na.rm = T)
 if(unclassified_employed > 0) warning(paste(unclassified_employed, "casos empregados não classificados!"))
+# Estudar os não classificados:
+df_unclassified <- df[sol & is.na(df$CONDLAB), ]
+# Frequência de ocupações e setores entre os não classificados
+table(df_unclassified$VD4009, useNA = "ifany")
+table(df_unclassified$VD4010, useNA = "ifany")
+table(df_unclassified$VD4011, useNA = "ifany")
+table(df_unclassified$VD4012, useNA = "ifany")
+table(df_unclassified$V4019, useNA = "ifany")
+sapply(df_unclassified[, c("VD4009", "VD4010", "VD4011", "VD4012", "V4019")], function(x) sum(is.na(x)))
+sum(!complete.cases(df_unclassified[, c("VD4009", "VD4010", "VD4011", "VD4012", "V4019")]))
+
+
+# aplicando em regiões BR/NORDESTE/ELSE -----------------------------------
+
+df <- df[!is.na(df$CONDLAB), ]# remove as linhas com CONDLAB NA
+df$nordeste_flag <- df$UF %in% c(21:29)
+
+df$CONDLAB <- factor(df$CONDLAB)
+
+#Criando um objeto Design
+design <- svydesign(
+  ids = ~UPA,
+  strata = ~Estrato,
+  weights = ~V1028,
+  data = df,
+  nest = T
+)
+
+design_nordeste <- subset(design, nordeste_flag & sol)
+svytotal(~CONDLAB, design_nordeste)
+
+prop <- svymean(~CONDLAB, design_nordeste)
+
+# --- Region flags ---
+ufs_nordeste <- c(21, 22, 23, 24, 25, 26, 27, 28, 29)
+df$nordeste_flag <- df$UF %in% ufs_nordeste
+df$brasil_flag   <- !is.na(df$UF)
+df$outros_flag   <- df$brasil_flag & !df$nordeste_flag
+
+# --- Sub-designs ---
+design_nordeste <- subset(design, nordeste_flag & sol)
+design_outros   <- subset(design, outros_flag & sol)
+design_brasil   <- subset(design, brasil_flag & sol)
+
+design_nordeste$variables$CONDLAB <- factor(design_nordeste$variables$CONDLAB)
+
+
+# --- Totals by CONDLAB ---
+total_nordeste <- svytotal(~factor(CONDLAB), design_nordeste)
+total_outros   <- svytotal(~factor(CONDLAB), design_outros)
+total_brasil   <- svytotal(~factor(CONDLAB), design_brasil)
+
+# --- Normalize to proportions ---
+v_nordeste <- coef(total_nordeste)
+v_outros   <- coef(total_outros)
+v_brasil   <- coef(total_brasil)
+
+v_nordeste <- v_nordeste / sum(v_nordeste)
+v_outros   <- v_outros / sum(v_outros)
+v_brasil   <- v_brasil / sum(v_brasil)
+
+# --- Merge all into data.frame ---
+tabela_final <- data.frame(
+  CONDLAB = as.integer(gsub("factor\\(CONDLAB\\)", "", names(v_brasil))),
+  Nordeste = round(100 * as.numeric(v_nordeste[names(v_brasil)]), 1),
+  Sem_Nordeste = round(100 * as.numeric(v_outros[names(v_brasil)]), 1),
+  Brasil = round(100 * as.numeric(v_brasil), 1)
+)
+
+tabela_final[is.na(tabela_final)] <- 0
+tabela_final <- arrange(tabela_final, CONDLAB)
+
+# --- Print minimal kable ---
+kable(tabela_final,
+      col.names = c("CONDLAB", "Nordeste (%)", "Sem Nordeste (%)", "Brasil (%)"),
+      align = "lccc",
+      digits = 1)

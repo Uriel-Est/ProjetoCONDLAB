@@ -188,6 +188,23 @@ tabela_final1_wide <- tabela_final1_wide %>%
   ) %>%
   select(Categoria, Label, everything())
 
+knitr::kable(tabela_final1_wide, digits = 1)
+
+writexl::write_xlsx(tabela_final1_wide, "C:/Users/uriel/OneDrive/Documentos/txt/UFPB Estatística/CONDLAB/ProjetoCONDLAB/code/teste_CONDLAB.xlsx")
+
+# Don't go tall, go wide:
+tabela_final1_wide <- tabela_final1 %>%
+  pivot_wider(
+    names_from = Regiao,
+    values_from = Percentual
+  )
+
+tabela_final1_wide <- tabela_final1_wide %>%
+  mutate(
+    Label = condlab_labels
+  ) %>%
+  select(Categoria, Label, everything())
+
 # 2. Renda Média por Condição Laboral ----------------------------------------
 
 dadosPNADc19.3$variables$CONDLAB <- pnad_design$variables$CONDLAB
@@ -256,121 +273,144 @@ preview_pretty <- function(df) {
 
 preview_pretty(income_table)
 
-# Distribuição em % da força de trabalho por sexo e raça -----------------------
+# 3. Distribuição em % da força de trabalho por sexo e raça -----------------------
 
+# 3.1 Atualizar o design com categorias raciais completas
 pnad_design <- update(pnad_design,
-                      sexo_raca4 = factor(
-                        ifelse(V2010 %in% c(3, 5), NA,  # Exclui amarelos e indígenas
-                               ifelse(V2007 == 1 & V2010 == 1, "Homem Branco",
-                                      ifelse(V2007 == 1 & V2010 %in% c(2, 4), "Homem Negro",
-                                             ifelse(V2007 == 2 & V2010 == 1, "Mulher Branca",
-                                                    ifelse(V2007 == 2 & V2010 %in% c(2, 4), "Mulher Negra", NA))))),
-                        levels = c("Homem Branco", "Homem Negro", "Mulher Branca", "Mulher Negra")
+                      sexo_raca8 = factor(
+                        case_when(
+                          V2007 == 1 & V2010 == 1 ~ "Homem Branco",
+                          V2007 == 1 & V2010 == 2 ~ "Homem Preto",
+                          V2007 == 1 & V2010 == 3 ~ "Homem Amarelo",
+                          V2007 == 1 & V2010 == 4 ~ "Homem Pardo",
+                          V2007 == 1 & V2010 == 5 ~ "Homem Indígena",
+                          V2007 == 2 & V2010 == 1 ~ "Mulher Branca",
+                          V2007 == 2 & V2010 == 2 ~ "Mulher Preta",
+                          V2007 == 2 & V2010 == 3 ~ "Mulher Amarela",
+                          V2007 == 2 & V2010 == 4 ~ "Mulher Parda",
+                          V2007 == 2 & V2010 == 5 ~ "Mulher Indígena",
+                          TRUE ~ NA_character_
+                        ),
+                        levels = c("Homem Branco", "Homem Preto", "Homem Amarelo", "Homem Pardo", "Homem Indígena",
+                                   "Mulher Branca", "Mulher Preta", "Mulher Amarela", "Mulher Parda", "Mulher Indígena")
                       )
 )
 
-design_total     <- subset(pnad_design, VD4001 == 1 & VD4002 == 1)
-design_nordeste  <- subset(pnad_design, UF %in% 21:29 & VD4001 == 1 & VD4002 == 1)
-
-calc_proporcoes_sexo_raca <- function(design) {
-  tab <- svytable(~sexo_raca4, design)
-  prop <- prop.table(tab) * 100
-  round(prop, 1)
-}
-
-prop_total    <- calc_proporcoes_sexo_raca(design_total)
-prop_nordeste <- calc_proporcoes_sexo_raca(design_nordeste)
-
-tabela_final <- data.frame(
-  Categoria = names(prop_total),
-  Brasil = as.numeric(prop_total),
-  Nordeste = as.numeric(prop_nordeste)
-)
-knitr::kable(tabela_final, caption = "Distribuição % da força de trabalho por sexo e raça")
-
-print(tabela_final)
-
-# Distribuição em % da força de trabalho por sexo e raça por categoria de ocupação------------------------
-
-
-# Garante que as variáveis rotuladas existam no design principal
-pnad_design <- update(pnad_design,
-                      sexo = factor(V2007, levels = c(1, 2), labels = c("Homem", "Mulher")),
-                      raca = factor(V2010, levels = 1:5,
-                                    labels = c("Branca", "Preta", "Amarela", "Parda", "Indígena"))
-)
-
-# Refaz os subconjuntos com as variáveis incluídas
+# 3.2 Criar subsets regionais
 design_total     <- subset(pnad_design, VD4001 == 1 & VD4002 == 1)
 design_nordeste  <- subset(pnad_design, UF %in% 21:29 & VD4001 == 1 & VD4002 == 1)
 design_br_sem_ne <- subset(pnad_design, !(UF %in% 21:29) & VD4001 == 1 & VD4002 == 1)
 
-# Função para calcular proporções por CONDLAB x sexo x raca
-calc_condlab_porcentagem <- function(design) {
-  # Contagem cruzada
-  tab <- svytable(~CONDLAB + sexo + raca, design)
-  
-  # Transforma para data.frame
-  df <- as.data.frame(tab)
-  
-  # Soma total por CONDLAB (para proporção relativa a cada onda)
-  total_por_onda <- aggregate(Freq ~ CONDLAB, df, sum)
-  names(total_por_onda)[2] <- "total_onda"
-  
-  # Junta para calcular percentual
-  df <- merge(df, total_por_onda, by = "CONDLAB")
-  df$percentual <- round(100 * df$Freq / df$total_onda, 2)
-  
-  return(df)
+# 3.3 Função de cálculo para estimativa
+calc_proporcoes_sexo_raca <- function(design) {
+  tab <- svytable(~sexo_raca8, design, exclude = NULL)
+  prop <- prop.table(tab) * 100
+  round(prop, 1)
 }
 
-tab_total     <- calc_condlab_porcentagem(design_total)
-tab_nordeste  <- calc_condlab_porcentagem(design_nordeste)
-tab_br_sem_ne <- calc_condlab_porcentagem(design_br_sem_ne)
+# 3.4 Calcular proporções
+prop_total    <- calc_proporcoes_sexo_raca(design_total)
+prop_nordeste <- calc_proporcoes_sexo_raca(design_nordeste)
+prop_br_sem_ne <- calc_proporcoes_sexo_raca(design_br_sem_ne)
 
-# 1. Converter CONDLAB para caractere (ou numérico) em todas as tabelas antes do join
-tab_total <- tab_total %>% mutate(CONDLAB = as.character(CONDLAB))
-tab_nordeste <- tab_nordeste %>% mutate(CONDLAB = as.character(CONDLAB))
-tab_br_sem_ne <- tab_br_sem_ne %>% mutate(CONDLAB = as.character(CONDLAB))
+# 3.5 Criação da tabela final
+tabela_final <- data.frame(
+  Categoria = names(prop_total),
+  Brasil = as.numeric(prop_total),
+  Nordeste = as.numeric(prop_nordeste),
+  Brasil_sem_NE = as.numeric(prop_br_sem_ne)
+)
 
-# 2. Agora sim juntar os dados
-dados_completos <- bind_rows(
-  tab_total %>% mutate(Regiao = "Brazil"),
-  tab_nordeste %>% mutate(Regiao = "Northeast"), 
-  tab_br_sem_ne %>% mutate(Regiao = "Brazil w/o NE")
-) %>%
-  left_join(
-    data.frame(
-      CONDLAB = as.character(1:16),  # Garantir que seja caractere
-      Categoria = condlab_labels
-    ),
-    by = "CONDLAB"
-  )
+# 3.6 Exportação e organização
+knitr::kable(tabela_final, caption = "Distribuição % da força de trabalho por sexo e raça")
 
-tabela_organizada <- dados_completos %>%
-  mutate(
-    # Criar coluna combinada de Região > Sexo > Raça
-    Grupo = paste(Regiao, sexo, raca, sep = " > ")
-  ) %>% 
-  select(CONDLAB, Categoria, Grupo, percentual) %>%
-  # Transformar em formato wide (uma coluna por grupo)
+print(tabela_final)
+
+
+# 4. Distribuição em % dos ocupados por condição laboral, sexo e raça --------
+
+
+# 4.1 Atualizar design com categorias consolidadas
+pnad_design <- update(pnad_design,
+                      sexo_raca = factor(
+                        case_when(
+                          V2007 == 1 & V2010 == 1 ~ "Homem Branco",
+                          V2007 == 1 & V2010 %in% c(2,4) ~ "Homem Negro",
+                          V2007 == 2 & V2010 == 1 ~ "Mulher Branca",
+                          V2007 == 2 & V2010 %in% c(2,4) ~ "Mulher Negra",
+                          TRUE ~ NA_character_
+                        ),
+                        levels = c("Homem Branco", "Homem Negro", "Mulher Branca", "Mulher Negra")
+                      ),
+                      CONDLAB = factor(CONDLAB, levels = 1:16, labels = condlab_labels)
+)
+
+# 4.2 Função de cálculo otimizada
+calcular_distribuicao <- function(design) {
+  svytable(~CONDLAB + sexo_raca, design) %>% 
+    prop.table(margin = 2) %>% 
+    as.data.frame() %>% 
+    mutate(percentual = round(Freq * 100, 1)) %>%
+    select(-Freq)
+}
+
+# 4.3 Processar todas as regiões
+dados_regioes <- bind_rows(
+  calcular_distribuicao(subset(pnad_design, VD4001 == 1 & VD4002 == 1)) %>% 
+    mutate(Regiao = "Brasil"),
+  
+  calcular_distribuicao(subset(pnad_design, UF %in% 21:29 & VD4001 == 1 & VD4002 == 1)) %>% 
+    mutate(Regiao = "Nordeste"),
+  
+  calcular_distribuicao(subset(pnad_design, !(UF %in% 21:29) & VD4001 == 1 & VD4002 == 1)) %>% 
+    mutate(Regiao = "Brasil_sem_NE")
+)
+
+# 4.4 Formatar tabela final
+tabela_final <- dados_regioes %>% 
   pivot_wider(
-    names_from = Grupo,
-    values_from = percentual,
-    names_sort = TRUE  # Ordena as colunas alfabeticamente
-  ) %>%
-  # Ordenar pelas categorias de trabalho
+    names_from = c(Regiao, sexo_raca),
+    names_glue = "{Regiao}_{str_replace(sexo_raca, ' ', '_')}",
+    values_from = percentual
+  ) %>% 
+  mutate(Total = rowSums(select(., -CONDLAB), na.rm = T)) %>%
   arrange(CONDLAB)
 
-# Calcular médias por região
-dados_completos %>% 
-  group_by(Regiao, CONDLAB) %>% 
-  summarise(
-    Media_Percentual = mean(percentual, na.rm = TRUE),
-    .groups = 'drop'
+# Total ocupados (em mil)
+total_nordeste      # vetor svytotal de cada condlab
+total_restobrasil   # idem
+total_br            # total Brasil inteiro
+
+# Colunas de Total para cada Região
+soma_nordeste <- sum(total_nordeste)
+soma_restobrasil <- sum(total_restobrasil)
+soma_brasil <- sum(total_br)
+
+peso_nordeste <- soma_nordeste / soma_brasil
+peso_restobrasil <- soma_restobrasil / soma_brasil
+
+tabela_final <- tabela_final %>%
+  mutate(
+    Total_Ponderado = (`Northeast` * peso_nordeste +
+                         `Brazil w/o northeast` * peso_restobrasil)
   )
 
-writexl::write_xlsx(tabela_organizada, "tabela_teste.xlsx")
+# 4.5 Visualização organizada (apenas primeiras linhas)
+head(tabela_final) %>% 
+  knitr::kable(caption = "Distribuição por ocupação, sexo e raça (%)")
+
+
+# 4.6 Adaptação²
+tabela_final <- dados_regioes %>% 
+  mutate(
+    Grupo = paste(Regiao, sexo_raca, sep = " - "),
+    percentual = paste0(percentual, "%")
+  ) %>% 
+  select(CONDLAB, Grupo, percentual) %>% 
+  pivot_wider(names_from = Grupo, values_from = percentual)
+
+writexl::write_xlsx(tabela_final, "C:/Users/uriel/OneDrive/Documentos/txt/UFPB Estatística/CONDLAB/ProjetoCONDLAB/code/distribuicao_condlab_sexo_raca.xlsx")
+
 
 # 5 Taxa de sindicalização 2020-2024 ----------------------------------------
 
@@ -401,6 +441,8 @@ resultado_nordeste <- svymean(~sindicado, pnadc_nordeste, na.rm = TRUE)
 resultado_brasil
 resultado_nordeste
 
+
+##Resultados resgatados de Características adicionais do mercado de trabalho PNADC [IBGE]
 
 # 6. Variação de Preço 2019-2024 ---------------------------------------------
 
@@ -449,8 +491,15 @@ print(dados_consolidados)
 
 dados_consolidados_df <- as.data.frame(dados_consolidados)
 
+## Dados resgatados de https://www.dadosdemercado.com.br/indices/ipca
+
 # Exportação --------------------------------------------------------------
 
 
 # Write multiple tables to separate sheets in the same Excel file
-write_xlsx(list("Sheet1" = tabela_final1_wide, "Sheet2" = income_table, "Sheet3" = tabela_final, "Sheet4" = tabela_organizada, "Sheet6" = dados_consolidados), "CONDLAB.xlsx")
+write_xlsx(list("Sheet1" = tabela_final1_wide,
+                "Sheet2" = income_table,
+                "Sheet3" = tabela_final,
+                "Sheet4" = tabela_organizada,
+                "Sheet6" = dados_consolidados),
+           "C:/Users/uriel/OneDrive/Documentos/txt/UFPB Estatística/CONDLAB/ProjetoCONDLAB/code/CONDLAB.xlsx")
